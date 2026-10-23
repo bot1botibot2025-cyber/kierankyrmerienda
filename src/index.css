@@ -1,0 +1,350 @@
+/* ============================================================
+   KK'S TINDAHAN - POS, INVENTORY & EXPENSE DESIGN SYSTEM
+   Theme: Midnight Amber & Emerald Gastro Luxe
+   ============================================================ */
+
+:root {
+  /* Color Palette */
+  --bg-app: #0b0f17;
+  --bg-surface: #111827;
+  --bg-surface-elevated: #1a2234;
+  --bg-surface-hover: #222d44;
+  --bg-card: rgba(22, 31, 48, 0.75);
+  --bg-card-border: rgba(255, 255, 255, 0.08);
+
+  /* Primary Brand (Warm Amber / Gold / Caramel) */
+  --primary: #f59e0b;
+  --primary-light: #fbbf24;
+  --primary-dark: #d97706;
+  --primary-gradient: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+  --primary-glow: rgba(245, 158, 11, 0.35);
+
+  /* Secondary Brand (Fresh Emerald Green for Profit & Money) */
+  --emerald: #10b981;
+  --emerald-light: #34d399;
+  --emerald-dark: #059669;
+  --emerald-glow: rgba(16, 185, 129, 0.3);
+
+  /* Accent Colors */
+  --accent-burgundy: #e11d48;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-coffee: #78350f;
+
+  /* Alert & Status */
+  --status-danger: #ef4444;
+  --status-warning: #f59e0b;
+  --status-success: #10b981;
+  --status-info: #06b6d4;
+
+  /* Typography Colors */
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --text-inverse: #0f172a;
+
+  /* Fonts */
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Radius & Shadows */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  --shadow-primary: 0 8px 20px -4px var(--primary-glow);
+  --shadow-emerald: 0 8px 20px -4px var(--emerald-glow);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(17, 24, 39, 0.85);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(16px);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-surface-hover);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-dark);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+}
+
+/* Base Card Style */
+.luxe-card {
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.luxe-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  text-decoration: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--primary-gradient);
+  color: #000;
+  box-shadow: var(--shadow-primary);
+  font-weight: 700;
+}
+.btn-primary:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-emerald {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  box-shadow: var(--shadow-emerald);
+  font-weight: 700;
+}
+.btn-emerald:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--bg-surface-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
+}
+.btn-secondary:hover {
+  background: var(--bg-surface-hover);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+.btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: var(--radius-sm);
+}
+
+.btn-lg {
+  padding: 14px 24px;
+  font-size: 1.1rem;
+  border-radius: var(--radius-lg);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-full);
+}
+
+.badge-gold {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.badge-green {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.badge-red {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.badge-blue {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+/* Inputs & Form Elements */
+.input-control {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.input-control:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.input-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+/* Modal Backdrop */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 16px;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background: var(--bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Animations */
+.pulse-badge {
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: 0.85; }
+}
+
+/* Monospace Numbers */
+.mono-num {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+/* Print Styles for Receipts and Shopping Lists */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .printable-area {
+    width: 100% !important;
+    max-width: 80mm !important; /* Standard POS thermal receipt width */
+    margin: 0 auto !important;
+    color: #000 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
