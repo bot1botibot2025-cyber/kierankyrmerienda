@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   INITIAL_INGREDIENTS, 
   INITIAL_MENU_ITEMS, 
@@ -12,6 +12,7 @@ import {
   STORAGE_KEYS 
 } from './utils/storage';
 import { deductIngredientsForOrder, reconcileCashDrawer } from './utils/calculations';
+import { getSupabase, fetchAllFromSupabase } from './utils/supabase';
 
 // Components
 import { Header } from './components/Header';
@@ -27,8 +28,9 @@ import './App.css';
 
 export function App() {
   const [dbConnected, setDbConnected] = useState(false);
+  const [supabaseConnected, setSupabaseConnected] = useState(false);
 
-  // State with LocalStorage Persistence + SQLite Hydration
+  // State with LocalStorage Persistence + DB Hydration
   const [ingredients, setIngredients] = useState(() => 
     loadStoredData(STORAGE_KEYS.INGREDIENTS, INITIAL_INGREDIENTS)
   );
@@ -53,26 +55,50 @@ export function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [activeReceiptOrder, setActiveReceiptOrder] = useState(null);
 
-  // Fetch initial data from SQLite Database server on startup
-  useEffect(() => {
-    fetch('/api/all')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.success) {
-          setDbConnected(true);
-          if (data.ingredients && data.ingredients.length > 0) setIngredients(data.ingredients);
-          if (data.menuItems && data.menuItems.length > 0) setMenuItems(data.menuItems);
-          if (data.orders) setOrders(data.orders);
-          if (data.expenses) setExpenses(data.expenses);
-          if (data.storeSettings && Object.keys(data.storeSettings).length > 0) setStoreSettings(data.storeSettings);
-          console.log('✅ SQLite Database Connected and loaded successfully!');
+  // Load from Supabase Cloud or Local SQLite Database
+  const loadDatabaseData = useCallback(async () => {
+    // 1. Try Supabase Cloud Database first
+    const supabaseClient = getSupabase();
+    if (supabaseClient) {
+      try {
+        const sbData = await fetchAllFromSupabase(supabaseClient);
+        if (sbData && sbData.success) {
+          setSupabaseConnected(true);
+          if (sbData.ingredients && sbData.ingredients.length > 0) setIngredients(sbData.ingredients);
+          if (sbData.menuItems && sbData.menuItems.length > 0) setMenuItems(sbData.menuItems);
+          if (sbData.orders) setOrders(sbData.orders);
+          if (sbData.expenses) setExpenses(sbData.expenses);
+          if (sbData.storeSettings && Object.keys(sbData.storeSettings).length > 0) setStoreSettings(sbData.storeSettings);
+          console.log('⚡ Loaded data directly from Supabase Cloud Database!');
+          return;
         }
-      })
-      .catch(() => {
-        console.log('ℹ️ Running in Local Storage Mode (SQLite server offline)');
-        setDbConnected(false);
-      });
+      } catch (err) {
+        console.warn('Supabase fetch failed, falling back to SQLite/Local:', err);
+      }
+    }
+
+    // 2. Fallback to Local SQLite Server
+    try {
+      const res = await fetch('/api/all');
+      const data = await res.json();
+      if (data && data.success) {
+        setDbConnected(true);
+        if (data.ingredients && data.ingredients.length > 0) setIngredients(data.ingredients);
+        if (data.menuItems && data.menuItems.length > 0) setMenuItems(data.menuItems);
+        if (data.orders) setOrders(data.orders);
+        if (data.expenses) setExpenses(data.expenses);
+        if (data.storeSettings && Object.keys(data.storeSettings).length > 0) setStoreSettings(data.storeSettings);
+        console.log('✅ SQLite Database Connected and loaded successfully!');
+      }
+    } catch {
+      console.log('ℹ️ Running in Offline Local Storage Mode');
+      setDbConnected(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadDatabaseData();
+  }, [loadDatabaseData]);
 
   // Sync to localStorage as offline safety backup
   useEffect(() => { saveStoredData(STORAGE_KEYS.INGREDIENTS, ingredients); }, [ingredients]);
@@ -118,9 +144,10 @@ export function App() {
       expectedCashInDrawer: reconciliation.expectedCashInDrawer,
       lowStockCount,
       urgentToBuyCount,
-      dbConnected
+      dbConnected,
+      supabaseConnected
     };
-  }, [orders, expenses, ingredients, storeSettings, dbConnected]);
+  }, [orders, expenses, ingredients, storeSettings, dbConnected, supabaseConnected]);
 
   // Handle Order Checkout Completion
   const handleCompleteOrder = async (newOrder) => {
@@ -139,7 +166,38 @@ export function App() {
     // 3. Open receipt modal
     setActiveReceiptOrder(newOrder);
 
-    // 4. Persist to SQLite Database backend
+    // 4. Persist to Supabase if connected
+    const supabaseClient = getSupabase();
+    if (supabaseClient) {
+      try {
+        await supabaseClient.from('orders').insert({
+          id: newOrder.id,
+          timestamp: newOrder.timestamp,
+          customer_name: newOrder.customerName,
+          subtotal: newOrder.subtotal,
+          discount: newOrder.discount || 0,
+          total_amount: newOrder.totalAmount,
+          payment_method: newOrder.paymentMethod,
+          cash_received: newOrder.cashReceived,
+          change_given: newOrder.changeGiven,
+          ref_number: newOrder.refNumber,
+          status: newOrder.status,
+          items: newOrder.items
+        });
+
+        // Update each deducted ingredient in Supabase
+        for (const ing of updatedIngredients) {
+          await supabaseClient
+            .from('ingredients')
+            .update({ current_stock: ing.currentStock })
+            .eq('id', ing.id);
+        }
+      } catch (err) {
+        console.warn('Supabase order insert error:', err);
+      }
+    }
+
+    // 5. Also persist to SQLite backend
     try {
       await fetch('/api/orders', {
         method: 'POST',
@@ -147,7 +205,7 @@ export function App() {
         body: JSON.stringify(newOrder)
       });
     } catch {
-      // ignore network errors if offline
+      // ignore
     }
   };
 
@@ -164,6 +222,25 @@ export function App() {
       notes: expensePayload.notes || "Auto-logged from inventory restock"
     };
     setExpenses(prev => [newExp, ...prev]);
+
+    // Persist to Supabase
+    const supabaseClient = getSupabase();
+    if (supabaseClient) {
+      try {
+        await supabaseClient.from('expenses').insert({
+          id: newExp.id,
+          date: newExp.date,
+          title: newExp.title,
+          category: newExp.category,
+          amount: newExp.amount,
+          payment_method: newExp.paymentMethod,
+          receipt_no: newExp.receiptNo,
+          notes: newExp.notes
+        });
+      } catch (err) {
+        console.warn('Supabase expense error:', err);
+      }
+    }
 
     // Persist to SQLite Database
     try {
@@ -277,6 +354,7 @@ export function App() {
             }}
             onResetData={handleResetStarterData}
             onRestoreData={handleRestoreBackupData}
+            onSupabaseConnected={loadDatabaseData}
           />
         )}
       </main>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Store, 
@@ -12,7 +12,13 @@ import {
   UserPlus, 
   Terminal, 
   ShieldCheck, 
-  Save 
+  Save,
+  Database,
+  Cloud,
+  CheckCircle2,
+  AlertCircle,
+  FileCode,
+  RefreshCw
 } from 'lucide-react';
 
 function GithubIcon({ size = 24 }) {
@@ -22,18 +28,38 @@ function GithubIcon({ size = 24 }) {
     </svg>
   );
 }
+
 import { exportDatabaseBackup } from '../utils/storage';
-import { formatCurrency } from '../utils/calculations';
+import { 
+  getSupabaseCredentials, 
+  saveSupabaseCredentials, 
+  testSupabaseConnection, 
+  getSupabase, 
+  seedSupabaseDatabase 
+} from '../utils/supabase';
 
 export function SettingsView({ 
   storeSettings, 
   setStoreSettings, 
   allDatabaseData, 
   onResetData, 
-  onRestoreData 
+  onRestoreData,
+  onSupabaseConnected
 }) {
   const [formData, setFormData] = useState({ ...storeSettings });
   const [copiedKey, setCopiedKey] = useState(null);
+
+  // Supabase state
+  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState(null); // { loading, success, message }
+  const [showSqlSchema, setShowSqlSchema] = useState(false);
+
+  useEffect(() => {
+    const creds = getSupabaseCredentials();
+    if (creds.url) setSupabaseUrl(creds.url);
+    if (creds.anonKey) setSupabaseKey(creds.anonKey);
+  }, []);
 
   const copyToClipboard = (text, key) => {
     navigator.clipboard.writeText(text);
@@ -45,6 +71,54 @@ export function SettingsView({
     e.preventDefault();
     setStoreSettings(formData);
     alert('Store settings saved successfully!');
+  };
+
+  // Test & Save Supabase
+  const handleTestAndSaveSupabase = async () => {
+    if (!supabaseUrl.trim() || !supabaseKey.trim()) {
+      alert('Please enter both Supabase Project URL and Public Anon Key.');
+      return;
+    }
+
+    setSupabaseTestStatus({ loading: true });
+    const result = await testSupabaseConnection(supabaseUrl, supabaseKey);
+    
+    if (result.success) {
+      saveSupabaseCredentials(supabaseUrl, supabaseKey);
+      setSupabaseTestStatus({
+        loading: false,
+        success: true,
+        message: 'Connected to Supabase! Tables verified and active.'
+      });
+      if (onSupabaseConnected) onSupabaseConnected();
+    } else {
+      setSupabaseTestStatus({
+        loading: false,
+        success: false,
+        message: `Connection failed: ${result.error}. (Tip: make sure you ran the SQL Schema script below in your Supabase SQL Editor!)`
+      });
+    }
+  };
+
+  // 1-Click Seed Cloud Database
+  const handleSeedCloudDatabase = async () => {
+    const client = getSupabase();
+    if (!client) {
+      alert('Please connect to Supabase first before uploading seed data.');
+      return;
+    }
+
+    if (!confirm('Upload all 21 Kieran & Kyr\'s Merienda menu items, recipes, and 36 ingredients to your Supabase Cloud Database?')) return;
+
+    try {
+      setSupabaseTestStatus({ loading: true, message: 'Uploading menu products to Supabase...' });
+      await seedSupabaseDatabase(client);
+      setSupabaseTestStatus({ loading: false, success: true, message: '🎉 All products and ingredients uploaded to Supabase Cloud!' });
+      alert('Successfully uploaded Kieran & Kyr\'s Merienda menu to your Supabase Cloud database!');
+    } catch (err) {
+      setSupabaseTestStatus({ loading: false, success: false, message: `Upload error: ${err.message}` });
+      alert(`Error uploading: ${err.message}`);
+    }
   };
 
   const handleExportBackup = () => {
@@ -65,16 +139,208 @@ export function SettingsView({
         } else {
           alert('Invalid backup file format');
         }
-      } catch (err) {
+      } catch {
         alert('Error parsing backup JSON file');
       }
     };
     reader.readAsText(file);
   };
 
+  const sqlSchemaText = `-- Copy this SQL and paste into Supabase SQL Editor:
+CREATE TABLE IF NOT EXISTS products (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  price NUMERIC NOT NULL,
+  emoji TEXT,
+  badge TEXT,
+  description TEXT,
+  recipe JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ingredients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  current_stock NUMERIC NOT NULL DEFAULT 0,
+  min_stock_threshold NUMERIC NOT NULL DEFAULT 0,
+  target_stock NUMERIC NOT NULL DEFAULT 0,
+  unit_cost NUMERIC NOT NULL DEFAULT 0,
+  package_unit TEXT,
+  package_cost NUMERIC DEFAULT 0,
+  supplier TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id TEXT PRIMARY KEY,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  customer_name TEXT,
+  subtotal NUMERIC NOT NULL,
+  discount NUMERIC DEFAULT 0,
+  total_amount NUMERIC NOT NULL,
+  payment_method TEXT NOT NULL,
+  cash_received NUMERIC,
+  change_given NUMERIC,
+  ref_number TEXT,
+  status TEXT NOT NULL DEFAULT 'Completed',
+  items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id TEXT PRIMARY KEY,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  payment_method TEXT NOT NULL,
+  receipt_no TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS store_settings (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ingredients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE store_settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public access for products" ON products FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public access for ingredients" ON ingredients FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public access for orders" ON orders FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public access for expenses" ON expenses FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public access for store_settings" ON store_settings FOR ALL USING (true) WITH CHECK (true);`;
+
   return (
     <div className="settings-container space-y-6">
-      {/* SECTION 1: GITHUB MULTI-PROFILE & ACCOUNT SWITCHER GUIDE */}
+      {/* SECTION 1: SUPABASE CLOUD DATABASE CONFIGURATION */}
+      <div className="luxe-card supabase-config-card" style={{ border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+        <div className="flex-align-center justify-between pb-3 mb-4 border-b border-card">
+          <div className="flex-align-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald/20 text-emerald">
+              <Cloud size={24} />
+            </div>
+            <div>
+              <div className="flex-align-center gap-2">
+                <h2 className="text-xl font-bold text-white">Supabase Cloud Database</h2>
+                <span className="badge badge-green">Recommended</span>
+              </div>
+              <p className="text-muted text-sm">
+                Connect your free Supabase cloud database to access your store POS from any phone, tablet, or laptop!
+              </p>
+            </div>
+          </div>
+          
+          <button 
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowSqlSchema(!showSqlSchema)}
+          >
+            <FileCode size={15} /> {showSqlSchema ? 'Hide SQL Script' : 'View SQL Schema'}
+          </button>
+        </div>
+
+        {/* Collapsible SQL Script */}
+        {showSqlSchema && (
+          <div className="mb-4 p-4 rounded-xl bg-black/60 border border-white/10">
+            <div className="flex-align-center justify-between mb-2">
+              <span className="text-xs font-bold text-emerald uppercase flex-align-center gap-1">
+                <FileCode size={14} /> Paste this into your Supabase Dashboard ➔ SQL Editor
+              </span>
+              <button 
+                className="btn btn-emerald btn-sm"
+                onClick={() => copyToClipboard(sqlSchemaText, 'sql_schema')}
+              >
+                {copiedKey === 'sql_schema' ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedKey === 'sql_schema' ? 'Copied SQL!' : 'Copy SQL Script'}</span>
+              </button>
+            </div>
+            <pre className="text-xs mono-num text-muted overflow-x-auto max-h-48 p-2">
+              {sqlSchemaText}
+            </pre>
+          </div>
+        )}
+
+        {/* Credentials Form */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="input-label text-white">Supabase Project URL</label>
+            <input 
+              type="text" 
+              className="input-control mono-num"
+              placeholder="https://your-project-id.supabase.co"
+              value={supabaseUrl}
+              onChange={(e) => setSupabaseUrl(e.target.value)}
+            />
+            <span className="text-dim text-xs">Found in Supabase: Project Settings ➔ API ➔ Project URL</span>
+          </div>
+
+          <div>
+            <label className="input-label text-white">Supabase Anon Public API Key</label>
+            <input 
+              type="password" 
+              className="input-control mono-num"
+              placeholder="eyJhbGciOi..."
+              value={supabaseKey}
+              onChange={(e) => setSupabaseKey(e.target.value)}
+            />
+            <span className="text-dim text-xs">Found in Supabase: Project Settings ➔ API ➔ anon public key</span>
+          </div>
+        </div>
+
+        {/* Status Feedback */}
+        {supabaseTestStatus && (
+          <div className={`p-3 rounded-lg mb-4 flex-align-center gap-2 ${supabaseTestStatus.success ? 'bg-emerald-950/40 text-emerald border border-emerald-500/30' : 'bg-red-950/40 text-danger border border-red-500/30'}`}>
+            {supabaseTestStatus.loading ? (
+              <RefreshCw className="animate-spin" size={18} />
+            ) : supabaseTestStatus.success ? (
+              <CheckCircle2 size={18} />
+            ) : (
+              <AlertCircle size={18} />
+            )}
+            <span className="text-sm">{supabaseTestStatus.message}</span>
+          </div>
+        )}
+
+        {/* Supabase Action Buttons */}
+        <div className="flex-align-center justify-between flex-wrap gap-3">
+          <div className="flex-align-center gap-2">
+            <button 
+              className="btn btn-emerald"
+              onClick={handleTestAndSaveSupabase}
+              disabled={supabaseTestStatus?.loading}
+            >
+              <CheckCircle2 size={16} /> Save & Connect Supabase
+            </button>
+            <button 
+              className="btn btn-secondary"
+              onClick={handleSeedCloudDatabase}
+              title="Upload all 21 items and ingredients to cloud"
+            >
+              <Upload size={16} /> Push Initial Menu to Cloud
+            </button>
+          </div>
+
+          <a 
+            href="https://supabase.com" 
+            target="_blank" 
+            rel="noreferrer"
+            className="text-xs text-emerald flex-align-center gap-1 hover:underline"
+          >
+            Don't have a Supabase database yet? Create free on supabase.com ➔
+          </a>
+        </div>
+      </div>
+
+      {/* SECTION 2: GITHUB MULTI-PROFILE & PUSH INSTRUCTIONS */}
       <div className="luxe-card github-guide-card">
         <div className="flex-align-center justify-between pb-3 mb-4 border-b border-card">
           <div className="flex-align-center gap-3">
@@ -82,102 +348,66 @@ export function SettingsView({
               <GithubIcon size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">GitHub Account Switching & Multi-Profile Guide</h2>
+              <h2 className="text-xl font-bold text-white">Push to Your GitHub Repository</h2>
               <p className="text-muted text-sm">
-                How to sign in directly or seamlessly switch between your personal and store GitHub accounts.
+                Target Repo: <code>https://github.com/bot1botibot2025-cyber/kierankyrmerienda.git</code>
               </p>
             </div>
           </div>
-          <span className="badge badge-gold">Direct Answer</span>
+          <span className="badge badge-gold">Remote Configured</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          {/* Method A: Built-in GitHub Web Switcher */}
-          <div className="method-box luxe-card" style={{ background: 'rgba(0,0,0,0.3)' }}>
-            <div className="flex-align-center gap-2 mb-2 text-primary font-bold">
-              <Globe size={18} />
-              <span>1. Direct Web Switcher</span>
-            </div>
-            <p className="text-sm text-dim mb-3">
-              GitHub has a native <strong>Account Switcher</strong> built directly into the website:
-            </p>
-            <ol className="text-xs text-muted space-y-1.5 pl-4 list-decimal">
-              <li>Open <strong>github.com</strong> in your browser.</li>
-              <li>Click your <strong>Profile Avatar</strong> (top-right corner).</li>
-              <li>Click <strong>"Switch account"</strong>.</li>
-              <li>Click <strong>"Add account"</strong> & sign in.</li>
-              <li>Switch between both accounts with <strong>1 click</strong>!</li>
-            </ol>
-          </div>
-
-          {/* Method B: Dedicated Browser Profile */}
-          <div className="method-box luxe-card" style={{ background: 'rgba(0,0,0,0.3)' }}>
-            <div className="flex-align-center gap-2 mb-2 text-emerald font-bold">
-              <UserPlus size={18} />
-              <span>2. Separate Browser Profile</span>
-            </div>
-            <p className="text-sm text-dim mb-3">
-              Best practice for keeping work/store completely isolated from personal:
-            </p>
-            <ol className="text-xs text-muted space-y-1.5 pl-4 list-decimal">
-              <li>In Chrome / Edge / Brave, click your browser profile icon (top right).</li>
-              <li>Click <strong>"Add Profile"</strong> (e.g. named <em>"KK's Store"</em>).</li>
-              <li>Sign in to your store's GitHub, email, and social accounts there.</li>
-              <li>Keeps tabs, cookies, and passwords 100% separate.</li>
-            </ol>
-          </div>
-
-          {/* Method C: Local Git Config for this Repo */}
-          <div className="method-box luxe-card" style={{ background: 'rgba(0,0,0,0.3)' }}>
-            <div className="flex-align-center gap-2 mb-2 text-amber font-bold">
-              <Terminal size={18} />
-              <span>3. Git Repo Configuration</span>
-            </div>
-            <p className="text-sm text-dim mb-3">
-              Ensure commits in <code>kks-tindahan-pos</code> use your store profile:
-            </p>
-            <div className="code-snippet-box">
-              <code className="text-xs text-amber block mb-2">
-                git config user.name "KK Tindahan"
-              </code>
-              <code className="text-xs text-amber block">
-                git config user.email "store@example.com"
-              </code>
-            </div>
-          </div>
-        </div>
+        <p className="text-sm text-dim mb-3">
+          Your remote repository is already configured as <code>origin</code>. Because GitHub requires personal account authentication, choose either method below:
+        </p>
 
         {/* Copyable Quick Setup Commands */}
-        <div className="p-4 rounded-xl bg-surface-elevated border border-white/10">
-          <div className="flex-align-center justify-between mb-2">
-            <span className="font-bold text-white text-sm flex-align-center gap-2">
-              <Key size={16} className="text-primary" /> Setup Commands for this Repository (Terminal)
-            </span>
-            <button 
-              className="btn btn-secondary btn-sm"
-              onClick={() => copyToClipboard(`git config user.name "KK Store Admin"\ngit config user.email "kks-tindahan@example.com"\ngit remote add origin https://github.com/YOUR_NEW_ACCOUNT/kks-tindahan-pos.git`, 'git_cmds')}
-            >
-              {copiedKey === 'git_cmds' ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
-              <span>{copiedKey === 'git_cmds' ? 'Copied!' : 'Copy Commands'}</span>
-            </button>
+        <div className="space-y-3">
+          {/* Option 1: Standard Push with Personal Access Token */}
+          <div className="p-4 rounded-xl bg-surface-elevated border border-white/10">
+            <div className="flex-align-center justify-between mb-2">
+              <span className="font-bold text-white text-sm flex-align-center gap-2">
+                <Terminal size={16} className="text-primary" /> Push with Username & Personal Access Token (PAT)
+              </span>
+              <button 
+                className="btn btn-secondary btn-sm"
+                onClick={() => copyToClipboard(`git push -u origin main`, 'git_push_standard')}
+              >
+                {copiedKey === 'git_push_standard' ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
+                <span>{copiedKey === 'git_push_standard' ? 'Copied!' : 'Copy Command'}</span>
+              </button>
+            </div>
+            <pre className="text-xs mono-num text-muted bg-black/50 p-3 rounded-lg overflow-x-auto">
+{`git push -u origin main
+# When prompted:
+# Username: bot1botibot2025-cyber
+# Password: <Paste your GitHub Personal Access Token with repo scope>`}
+            </pre>
           </div>
-          <pre className="text-xs mono-num text-muted bg-black/50 p-3 rounded-lg overflow-x-auto">
-{`# 1. Set your custom username and email for this store project:
-git config user.name "Your New Account Name"
-git config user.email "your-store-email@gmail.com"
 
-# 2. Add your new GitHub remote:
-git remote add origin https://github.com/YOUR_NEW_ACCOUNT/kks-tindahan-pos.git
-
-# 3. Push your store POS code:
-git add .
-git commit -m "feat: complete KK Tindahan POS, Recipe Inventory & Expense Tracker"
+          {/* Option 2: 1-Step Push with Token in URL */}
+          <div className="p-4 rounded-xl bg-surface-elevated border border-white/10">
+            <div className="flex-align-center justify-between mb-2">
+              <span className="font-bold text-white text-sm flex-align-center gap-2">
+                <Key size={16} className="text-emerald" /> 1-Step Push (Insert your token in URL)
+              </span>
+              <button 
+                className="btn btn-secondary btn-sm"
+                onClick={() => copyToClipboard(`git remote set-url origin https://YOUR_GITHUB_TOKEN@github.com/bot1botibot2025-cyber/kierankyrmerienda.git\ngit push -u origin main`, 'git_push_token')}
+              >
+                {copiedKey === 'git_push_token' ? <Check size={14} className="text-emerald" /> : <Copy size={14} />}
+                <span>{copiedKey === 'git_push_token' ? 'Copied!' : 'Copy Command'}</span>
+              </button>
+            </div>
+            <pre className="text-xs mono-num text-muted bg-black/50 p-3 rounded-lg overflow-x-auto">
+{`git remote set-url origin https://YOUR_GITHUB_TOKEN@github.com/bot1botibot2025-cyber/kierankyrmerienda.git
 git push -u origin main`}
-          </pre>
+            </pre>
+          </div>
         </div>
       </div>
 
-      {/* SECTION 2: STORE PROFILE & CONFIGURATION */}
+      {/* SECTION 3: STORE PROFILE & CONFIGURATION */}
       <div className="luxe-card store-settings-card">
         <div className="flex-align-center justify-between pb-3 mb-4 border-b border-card">
           <div className="flex-align-center gap-3">
@@ -261,7 +491,7 @@ git push -u origin main`}
         </form>
       </div>
 
-      {/* SECTION 3: DATA BACKUP & OFFLINE PERSISTENCE */}
+      {/* SECTION 4: DATA BACKUP & OFFLINE PERSISTENCE */}
       <div className="luxe-card backup-card">
         <div className="flex-align-center justify-between pb-3 mb-4 border-b border-card">
           <div className="flex-align-center gap-3">
@@ -270,13 +500,12 @@ git push -u origin main`}
             </div>
             <div>
               <h2 className="text-xl font-bold text-white">Offline Data Backup & Sync</h2>
-              <p className="text-muted text-sm">All store data is saved locally in browser storage. Download backups anytime.</p>
+              <p className="text-muted text-sm">Download full JSON database snapshots anytime.</p>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Export JSON */}
           <div className="p-4 rounded-xl bg-surface-elevated border border-white/10 flex flex-col justify-between">
             <div>
               <h4 className="font-bold text-white mb-1">Download Backup (JSON)</h4>
@@ -287,7 +516,6 @@ git push -u origin main`}
             </button>
           </div>
 
-          {/* Import JSON */}
           <div className="p-4 rounded-xl bg-surface-elevated border border-white/10 flex flex-col justify-between">
             <div>
               <h4 className="font-bold text-white mb-1">Restore Backup</h4>
@@ -299,11 +527,10 @@ git push -u origin main`}
             </label>
           </div>
 
-          {/* Reset Demo Data */}
           <div className="p-4 rounded-xl bg-surface-elevated border border-white/10 flex flex-col justify-between">
             <div>
-              <h4 className="font-bold text-white mb-1">Reset to Sample Data</h4>
-              <p className="text-xs text-dim mb-4">Reset all hotdogs, burgers, coffee jellies, and inventory to standard starter data.</p>
+              <h4 className="font-bold text-white mb-1">Reset to Starter Menu</h4>
+              <p className="text-xs text-dim mb-4">Reset all burgers, hotdogs, waffles, fries, fruit sodas, and coffee jellies to official flyer data.</p>
             </div>
             <button className="btn btn-danger btn-sm" onClick={onResetData}>
               <RotateCcw size={15} /> Reset Starter Data

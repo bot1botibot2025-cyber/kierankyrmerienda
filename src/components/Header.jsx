@@ -42,8 +42,8 @@ export function Header({
           <div>
             <div className="brand-title-row">
               <h1 className="brand-name">{storeSettings.storeName || "Kieran & Kyr's Merienda"}</h1>
-              <span className={`badge ${stats.dbConnected ? 'badge-green' : 'badge-gold'}`}>
-                {stats.dbConnected ? '🟢 SQLite Database' : '💾 Local DB'}
+              <span className={`badge ${stats.supabaseConnected ? 'badge-green' : stats.dbConnected ? 'badge-blue' : 'badge-gold'}`}>
+                {stats.supabaseConnected ? '⚡ Supabase Cloud' : stats.dbConnected ? '🟢 SQLite DB' : '💾 Local DB'}
               </span>
             </div>
             <p className="brand-tagline">{storeSettings.tagline || "Good Food • Good Mood • Always a Merienda Time!"}</p>
